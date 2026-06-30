@@ -7,5 +7,7 @@ configuration:
   properties:
     gcs_uri:
       type: string
+    default_clone_flags:
+      type: string
   required:
     - gcs_uri
