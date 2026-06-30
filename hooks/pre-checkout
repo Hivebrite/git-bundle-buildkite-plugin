@@ -1,0 +1,9 @@
+#!/bin/bash
+set -euo pipefail
+
+BUNDLE_GCS_URI="${BUILDKITE_PLUGIN_BUILDKITE_GIT_BUNDLE_GCS_URI}"
+BUNDLE_PATH="/tmp/buildkite-git-bundle.bundle"
+
+gsutil -q cp "${BUNDLE_GCS_URI}" "${BUNDLE_PATH}" 2>/dev/null || exit 0
+
+export BUILDKITE_GIT_CLONE_FLAGS="${BUILDKITE_GIT_CLONE_FLAGS:-} --bundle-uri=${BUNDLE_PATH}"
