@@ -65,6 +65,9 @@ if [ "${seed_ok}" = true ]; then
   note "seeded from bundle OK (.git=$(du -sh .git 2>/dev/null | cut -f1))"
 else
   note "seed failed, normal checkout: $(tail -c 300 /tmp/gb_err)"
-  rm -rf "${CO:?}/".git "${CO:?}"/* 2>/dev/null || true
+  cd /
+  rm -rf "${CO:?}"
+  mkdir -p "${CO}"
+  cd "${CO}"
   normal_checkout
 fi
