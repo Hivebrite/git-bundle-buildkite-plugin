@@ -3,30 +3,31 @@ set -euo pipefail
 
 BUNDLE_GCS_URI="${BUILDKITE_PLUGIN_GIT_BUNDLE_GCS_URI}"
 BUNDLE_PATH="/tmp/buildkite-git-bundle.bundle"
-CHECKOUT_PATH="${BUILDKITE_BUILD_CHECKOUT_PATH}"
+REF_REPO="/workspace/.git-bundle-ref.git"
 
-echo "git-bundle: BUILDKITE_BUILD_CHECKOUT_PATH=${CHECKOUT_PATH} PWD=$(pwd)"
+add_ref_flags() {
+  export BUILDKITE_GIT_CLONE_FLAGS="${BUILDKITE_GIT_CLONE_FLAGS:-} --reference-if-able ${REF_REPO} --dissociate"
+}
 
-if [ -d "${CHECKOUT_PATH}/.git" ]; then
-  echo "git-bundle: checkout already has .git, skipping seed"
+if [ -d "${REF_REPO}" ]; then
+  add_ref_flags
+  echo "git-bundle: reference repo already present, reusing"
   exit 0
 fi
 
 if ! gcloud storage cp "${BUNDLE_GCS_URI}" "${BUNDLE_PATH}"; then
-  echo "git-bundle: bundle unavailable, Buildkite will clone from origin"
+  echo "git-bundle: bundle unavailable, normal clone from origin"
   exit 0
 fi
 
 if ! git bundle verify "${BUNDLE_PATH}" >/dev/null 2>&1; then
-  echo "git-bundle: bundle invalid, Buildkite will clone from origin"
+  echo "git-bundle: bundle invalid, normal clone from origin"
   rm -f "${BUNDLE_PATH}"
   exit 0
 fi
 
-echo "git-bundle: seeding ${CHECKOUT_PATH} from bundle"
-mkdir -p "${CHECKOUT_PATH}"
-git clone --no-checkout "${BUNDLE_PATH}" "${CHECKOUT_PATH}"
-git -C "${CHECKOUT_PATH}" remote set-url origin "${BUILDKITE_REPO}"
-touch "${CHECKOUT_PATH}/.git/.git-bundle-seeded"
+echo "git-bundle: building reference repo from bundle"
+git clone --bare "${BUNDLE_PATH}" "${REF_REPO}"
 rm -f "${BUNDLE_PATH}"
-echo "git-bundle: seed complete, .git at ${CHECKOUT_PATH}/.git ($(du -sh ${CHECKOUT_PATH}/.git 2>/dev/null | cut -f1))"
+add_ref_flags
+echo "git-bundle: reference ready (${REF_REPO}); BUILDKITE_GIT_CLONE_FLAGS=${BUILDKITE_GIT_CLONE_FLAGS}"
