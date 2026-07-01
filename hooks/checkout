@@ -9,26 +9,14 @@ COMMIT="${BUILDKITE_COMMIT}"
 CLONE_FLAGS="${BUILDKITE_GIT_CLONE_FLAGS:--v}"
 FETCH_FLAGS="${BUILDKITE_GIT_FETCH_FLAGS:--v}"
 
-# Report how many bytes the last git operation pulled over the network (GitHub).
-report_github_transfer() {
-  local label="$1" logf="$2"
-  local line
-  line=$(grep -aoE "Receiving objects: 100% \([0-9]+/[0-9]+\), [0-9.]+ [KMG]iB" "${logf}" | tail -1)
-  if [ -z "${line}" ]; then
-    line=$(grep -aoE "Total [0-9]+ \(delta [0-9]+\)" "${logf}" | tail -1)
-  fi
-  echo "git-bundle: ${label} GitHub transfer: ${line:-<none / already local>}"
-}
-
 normal_checkout() {
   if [ ! -d .git ]; then
     # shellcheck disable=SC2086
-    git clone ${CLONE_FLAGS} -- "${REPO}" . 2>/tmp/gb_net
+    git clone ${CLONE_FLAGS} -- "${REPO}" .
   fi
   git remote set-url origin "${REPO}"
   # shellcheck disable=SC2086
-  git fetch ${FETCH_FLAGS} -- origin "${COMMIT}" 2>>/tmp/gb_net
-  report_github_transfer "NORMAL CLONE (no cache)" /tmp/gb_net
+  git fetch ${FETCH_FLAGS} -- origin "${COMMIT}"
   git checkout -f "${COMMIT}"
   git clean -ffxdq
 }
@@ -60,11 +48,11 @@ fi
 echo "git-bundle: downloaded git cache from GCS (in-infra): $(du -h "${TAR}" | cut -f1)"
 
 seed_ok=false
-if tar -xf "${TAR}" -C "${CO}" 2>/tmp/gb_err && [ -d "${CO}/.git" ]; then
-  git remote set-url origin "${REPO}" 2>>/tmp/gb_err || true
+if tar -xf "${TAR}" -C "${CO}" && [ -d "${CO}/.git" ]; then
+  git remote set-url origin "${REPO}"
+  echo "git-bundle: fetching only the commit delta from GitHub ↓↓↓"
   # shellcheck disable=SC2086
-  if git fetch ${FETCH_FLAGS} -- origin "${COMMIT}" 2>/tmp/gb_net \
-     && git checkout -f "${COMMIT}" 2>>/tmp/gb_err; then
+  if git fetch ${FETCH_FLAGS} -- origin "${COMMIT}" && git checkout -f "${COMMIT}"; then
     git clean -ffxdq
     seed_ok=true
   fi
@@ -72,11 +60,10 @@ fi
 rm -f "${TAR}"
 
 if [ "${seed_ok}" = true ]; then
-  report_github_transfer "SEEDED (delta only)" /tmp/gb_net
-  echo "git-bundle: SEEDED checkout from GCS cache — GitHub served only the commit delta (.git=$(du -sh .git 2>/dev/null | cut -f1))"
-  buildkite-agent annotate --context git-bundle --style success "seeded from GCS cache — GitHub delta: $(grep -aoE 'Receiving objects: 100% \([0-9]+/[0-9]+\), [0-9.]+ [KMG]iB' /tmp/gb_net | tail -1 || echo none)" 2>/dev/null || true
+  echo "git-bundle: SEEDED from GCS cache — GitHub served only the delta above (vs a full ~97MB clone). .git=$(du -sh .git 2>/dev/null | cut -f1)"
+  buildkite-agent annotate --context git-bundle --style success "seeded from GCS cache OK" 2>/dev/null || true
 else
-  echo "git-bundle: seed failed ($(tail -c 200 /tmp/gb_err)); falling back to normal checkout"
+  echo "git-bundle: seed failed; falling back to normal checkout"
   cd /
   rm -rf "${CO:?}"
   mkdir -p "${CO}"
