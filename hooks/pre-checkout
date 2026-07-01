@@ -1,0 +1,31 @@
+#!/bin/bash
+set -euo pipefail
+
+GCS_URI="${BUILDKITE_PLUGIN_GIT_BUNDLE_GCS_URI}"
+BUNDLE="/tmp/buildkite-git-bundle.bundle"
+REF_REPO="/workspace/.git-bundle-ref.git"
+
+note() { buildkite-agent annotate --context git-bundle --style info "$1" 2>/dev/null || true; }
+
+add_ref_flags() {
+  export BUILDKITE_GIT_CLONE_FLAGS="${BUILDKITE_GIT_CLONE_FLAGS:-} --reference-if-able ${REF_REPO} --dissociate"
+}
+
+if [ -d "${REF_REPO}" ]; then
+  add_ref_flags
+  exit 0
+fi
+
+if ! gcloud storage cp "${GCS_URI}" "${BUNDLE}" 2>/tmp/gb_err; then
+  note "bundle unavailable, normal clone: $(head -c 200 /tmp/gb_err)"
+  exit 0
+fi
+
+if git clone --bare "${BUNDLE}" "${REF_REPO}" 2>/tmp/gb_err; then
+  rm -f "${BUNDLE}"
+  add_ref_flags
+  note "reference repo ready ($(du -sh "${REF_REPO}" 2>/dev/null | cut -f1)); clone will borrow objects locally"
+else
+  note "bundle unpack failed, normal clone: $(head -c 200 /tmp/gb_err)"
+  rm -rf "${REF_REPO}" "${BUNDLE}" 2>/dev/null || true
+fi
