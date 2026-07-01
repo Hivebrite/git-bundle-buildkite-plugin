@@ -12,8 +12,6 @@ FETCH_FLAGS="${BUILDKITE_GIT_FETCH_FLAGS:--v}"
 note() { buildkite-agent annotate --context git-bundle-checkout --style info "$1" 2>/dev/null || true; }
 
 normal_checkout() {
-  mkdir -p "${CO}"
-  cd "${CO}"
   if [ ! -d .git ]; then
     # shellcheck disable=SC2086
     git clone ${CLONE_FLAGS} -- "${REPO}" .
@@ -25,27 +23,30 @@ normal_checkout() {
   git clean -ffxdq
 }
 
-echo "git-bundle: checkout hook RUNNING (CO=${CO})"
-note "checkout hook ran"
+mkdir -p "${CO}"
+cd "${CO}"
 
-if ! gcloud storage cp "${GCS_URI}" "${BUNDLE}" 2>/tmp/gb_dl_err || ! git bundle verify "${BUNDLE}" >/dev/null 2>&1; then
-  note "fell back to normal checkout: $(head -c 300 /tmp/gb_dl_err 2>/dev/null)"
-  echo "git-bundle: bundle unavailable/invalid, falling back to normal checkout"
-  rm -f "${BUNDLE}"
+if [ -d .git ]; then
   normal_checkout
   exit 0
 fi
 
-echo "git-bundle: seeding checkout from GCS bundle"
-mkdir -p "${CO}"
-cd "${CO}"
-if [ ! -d .git ]; then
-  git clone --no-checkout "${BUNDLE}" .
-  git remote set-url origin "${REPO}"
+if ! gcloud storage cp "${GCS_URI}" "${BUNDLE}" 2>/tmp/gb_err; then
+  note "bundle download failed, normal checkout: $(head -c 200 /tmp/gb_err)"
+  normal_checkout
+  exit 0
 fi
-rm -f "${BUNDLE}"
-git fetch -v -- origin "${COMMIT}"
-git checkout -f "${COMMIT}"
-git clean -ffxdq
-note "seeded from bundle OK"
-echo "git-bundle: checkout complete from bundle (delta fetched from origin)"
+
+if git clone --no-checkout "${BUNDLE}" . 2>/tmp/gb_err; then
+  rm -f "${BUNDLE}"
+  git remote set-url origin "${REPO}"
+  git fetch -v -- origin "${COMMIT}"
+  git checkout -f "${COMMIT}"
+  git clean -ffxdq
+  note "seeded from bundle OK"
+else
+  note "bundle clone failed, normal checkout: $(head -c 200 /tmp/gb_err)"
+  rm -f "${BUNDLE}"
+  rm -rf "${CO:?}/".git "${CO:?}"/* 2>/dev/null || true
+  normal_checkout
+fi
