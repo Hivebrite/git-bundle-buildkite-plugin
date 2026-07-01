@@ -2,7 +2,7 @@ name: Git Bundle Checkout
 description: Seeds the Buildkite checkout directory from a GCS-hosted git bundle to speed up checkout
 author: Hivebrite
 requirements:
-  - gsutil
+  - gcloud
   - git
 configuration:
   properties:

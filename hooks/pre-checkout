@@ -7,7 +7,7 @@ CHECKOUT_PATH="${BUILDKITE_BUILD_CHECKOUT_PATH}"
 
 [ -d "${CHECKOUT_PATH}/.git" ] && exit 0
 
-if ! gsutil -q cp "${BUNDLE_GCS_URI}" "${BUNDLE_PATH}" 2>/dev/null; then
+if ! gcloud storage cp "${BUNDLE_GCS_URI}" "${BUNDLE_PATH}" 2>/dev/null; then
   echo "git-bundle: bundle unavailable, Buildkite will clone from origin"
   exit 0
 fi
