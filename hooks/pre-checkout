@@ -3,12 +3,23 @@ set -euo pipefail
 
 BUNDLE_GCS_URI="${BUILDKITE_PLUGIN_GIT_BUNDLE_GCS_URI}"
 BUNDLE_PATH="/tmp/buildkite-git-bundle.bundle"
+CHECKOUT_PATH="${BUILDKITE_BUILD_CHECKOUT_PATH}"
 
-if ! gsutil -m -q cp "${BUNDLE_GCS_URI}" "${BUNDLE_PATH}" 2>/dev/null; then
-  echo "git-bundle: bundle unavailable, falling back to full clone"
+[ -d "${CHECKOUT_PATH}/.git" ] && exit 0
+
+if ! gsutil -q cp "${BUNDLE_GCS_URI}" "${BUNDLE_PATH}" 2>/dev/null; then
+  echo "git-bundle: bundle unavailable, Buildkite will clone from origin"
   exit 0
 fi
 
-DEFAULT_FLAGS="${BUILDKITE_PLUGIN_GIT_BUNDLE_DEFAULT_CLONE_FLAGS:--v}"
-BASE_FLAGS="${BUILDKITE_GIT_CLONE_FLAGS:-${DEFAULT_FLAGS}}"
-export BUILDKITE_GIT_CLONE_FLAGS="${BASE_FLAGS} --bundle-uri=${BUNDLE_PATH}"
+if ! git bundle verify "${BUNDLE_PATH}" >/dev/null 2>&1; then
+  echo "git-bundle: bundle invalid, Buildkite will clone from origin"
+  rm -f "${BUNDLE_PATH}"
+  exit 0
+fi
+
+echo "git-bundle: seeding ${CHECKOUT_PATH} from bundle"
+mkdir -p "${CHECKOUT_PATH}"
+git clone --no-checkout "${BUNDLE_PATH}" "${CHECKOUT_PATH}"
+git -C "${CHECKOUT_PATH}" remote set-url origin "${BUILDKITE_REPO}"
+rm -f "${BUNDLE_PATH}"

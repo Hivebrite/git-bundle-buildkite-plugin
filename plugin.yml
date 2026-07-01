@@ -1,13 +1,12 @@
 name: Git Bundle Checkout
-description: Seeds git clone from a GCS-hosted git bundle to speed up checkout
+description: Seeds the Buildkite checkout directory from a GCS-hosted git bundle to speed up checkout
 author: Hivebrite
 requirements:
   - gsutil
+  - git
 configuration:
   properties:
     gcs_uri:
-      type: string
-    default_clone_flags:
       type: string
   required:
     - gcs_uri
