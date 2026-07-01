@@ -5,9 +5,14 @@ BUNDLE_GCS_URI="${BUILDKITE_PLUGIN_GIT_BUNDLE_GCS_URI}"
 BUNDLE_PATH="/tmp/buildkite-git-bundle.bundle"
 CHECKOUT_PATH="${BUILDKITE_BUILD_CHECKOUT_PATH}"
 
-[ -d "${CHECKOUT_PATH}/.git" ] && exit 0
+echo "git-bundle: BUILDKITE_BUILD_CHECKOUT_PATH=${CHECKOUT_PATH} PWD=$(pwd)"
 
-if ! gcloud storage cp "${BUNDLE_GCS_URI}" "${BUNDLE_PATH}" 2>/dev/null; then
+if [ -d "${CHECKOUT_PATH}/.git" ]; then
+  echo "git-bundle: checkout already has .git, skipping seed"
+  exit 0
+fi
+
+if ! gcloud storage cp "${BUNDLE_GCS_URI}" "${BUNDLE_PATH}"; then
   echo "git-bundle: bundle unavailable, Buildkite will clone from origin"
   exit 0
 fi
@@ -24,3 +29,4 @@ git clone --no-checkout "${BUNDLE_PATH}" "${CHECKOUT_PATH}"
 git -C "${CHECKOUT_PATH}" remote set-url origin "${BUILDKITE_REPO}"
 touch "${CHECKOUT_PATH}/.git/.git-bundle-seeded"
 rm -f "${BUNDLE_PATH}"
+echo "git-bundle: seed complete, .git at ${CHECKOUT_PATH}/.git ($(du -sh ${CHECKOUT_PATH}/.git 2>/dev/null | cut -f1))"
