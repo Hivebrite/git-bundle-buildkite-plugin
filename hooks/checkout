@@ -6,7 +6,6 @@ BUNDLE="/tmp/buildkite-git-bundle.bundle"
 CO="${BUILDKITE_BUILD_CHECKOUT_PATH}"
 REPO="${BUILDKITE_REPO}"
 COMMIT="${BUILDKITE_COMMIT}"
-DEFAULT_BRANCH="${BUILDKITE_PIPELINE_DEFAULT_BRANCH:-master}"
 CLONE_FLAGS="${BUILDKITE_GIT_CLONE_FLAGS:--v}"
 FETCH_FLAGS="${BUILDKITE_GIT_FETCH_FLAGS:--v}"
 
@@ -31,6 +30,18 @@ if [ -d .git ]; then
   normal_checkout
   exit 0
 fi
+
+# The bundle is a shallow (depth-1) snapshot of the default branch. Only seed
+# steps that do a plain depth-1 checkout; steps that ask for deeper history or
+# tags (release/deploy steps, monorepo-diff "Detect changes" via git-flags)
+# need real history, so let Buildkite's normal checkout handle them.
+case " ${CLONE_FLAGS} ${FETCH_FLAGS} " in
+  *" --depth=1 "*) : ;;
+  *) normal_checkout; exit 0 ;;
+esac
+case " ${CLONE_FLAGS} ${FETCH_FLAGS} " in
+  *"--tags"*) normal_checkout; exit 0 ;;
+esac
 
 if ! gcloud storage cp "${GCS_URI}" "${BUNDLE}" 2>/tmp/gb_err; then
   note "bundle download failed, normal checkout: $(head -c 200 /tmp/gb_err)"
