@@ -49,17 +49,22 @@ if ! gcloud storage cp "${GCS_URI}" "${BUNDLE}" 2>/tmp/gb_err; then
   exit 0
 fi
 
+seed_ok=false
 if git clone --no-checkout "${BUNDLE}" . 2>/tmp/gb_err; then
-  rm -f "${BUNDLE}"
   git remote set-url origin "${REPO}"
   # shellcheck disable=SC2086
-  git fetch ${FETCH_FLAGS} -- origin "${COMMIT}"
-  git checkout -f "${COMMIT}"
-  git clean -ffxdq
+  if git fetch ${FETCH_FLAGS} -- origin "${COMMIT}" 2>>/tmp/gb_err \
+     && git checkout -f "${COMMIT}" 2>>/tmp/gb_err; then
+    git clean -ffxdq
+    seed_ok=true
+  fi
+fi
+rm -f "${BUNDLE}"
+
+if [ "${seed_ok}" = true ]; then
   note "seeded from bundle OK (.git=$(du -sh .git 2>/dev/null | cut -f1))"
 else
-  note "bundle clone failed, normal checkout: $(head -c 200 /tmp/gb_err)"
-  rm -f "${BUNDLE}"
+  note "seed failed, normal checkout: $(tail -c 300 /tmp/gb_err)"
   rm -rf "${CO:?}/".git "${CO:?}"/* 2>/dev/null || true
   normal_checkout
 fi
