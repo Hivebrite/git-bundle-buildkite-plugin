@@ -8,7 +8,8 @@ REPO="${BUILDKITE_REPO}"
 COMMIT="${BUILDKITE_COMMIT}"
 CLONE_FLAGS="${BUILDKITE_GIT_CLONE_FLAGS:--v}"
 FETCH_FLAGS="${BUILDKITE_GIT_FETCH_FLAGS:--v}"
-REFSPEC="${BUILDKITE_REFSPEC:-}"
+
+note() { buildkite-agent annotate --context git-bundle-checkout --style info "$1" 2>/dev/null || true; }
 
 normal_checkout() {
   mkdir -p "${CO}"
@@ -24,7 +25,11 @@ normal_checkout() {
   git clean -ffxdq
 }
 
-if ! gcloud storage cp "${GCS_URI}" "${BUNDLE}" 2>/dev/null || ! git bundle verify "${BUNDLE}" >/dev/null 2>&1; then
+echo "git-bundle: checkout hook RUNNING (CO=${CO})"
+note "checkout hook ran"
+
+if ! gcloud storage cp "${GCS_URI}" "${BUNDLE}" 2>/tmp/gb_dl_err || ! git bundle verify "${BUNDLE}" >/dev/null 2>&1; then
+  note "fell back to normal checkout: $(head -c 300 /tmp/gb_dl_err 2>/dev/null)"
   echo "git-bundle: bundle unavailable/invalid, falling back to normal checkout"
   rm -f "${BUNDLE}"
   normal_checkout
@@ -42,4 +47,5 @@ rm -f "${BUNDLE}"
 git fetch -v -- origin "${COMMIT}"
 git checkout -f "${COMMIT}"
 git clean -ffxdq
+note "seeded from bundle OK"
 echo "git-bundle: checkout complete from bundle (delta fetched from origin)"
