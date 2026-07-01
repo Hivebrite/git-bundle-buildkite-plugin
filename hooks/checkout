@@ -1,15 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 
-GCS_URI="${BUILDKITE_PLUGIN_GIT_BUNDLE_GCS_URI}"
-BUNDLE="/tmp/buildkite-git-bundle.bundle"
+CACHE_URI="${BUILDKITE_PLUGIN_GIT_BUNDLE_GCS_URI}"
+TAR="/tmp/buildkite-git-cache.tar"
 CO="${BUILDKITE_BUILD_CHECKOUT_PATH}"
 REPO="${BUILDKITE_REPO}"
 COMMIT="${BUILDKITE_COMMIT}"
 CLONE_FLAGS="${BUILDKITE_GIT_CLONE_FLAGS:--v}"
 FETCH_FLAGS="${BUILDKITE_GIT_FETCH_FLAGS:--v}"
-
-note() { buildkite-agent annotate --context git-bundle --style info "$1" 2>/dev/null || true; }
 
 normal_checkout() {
   if [ ! -d .git ]; then
@@ -31,27 +29,28 @@ if [ -d .git ]; then
   exit 0
 fi
 
-# The bundle is a shallow (depth-1) snapshot of the default branch. Only seed
-# steps that do a plain depth-1 checkout; steps that ask for deeper history or
-# tags (release/deploy steps, monorepo-diff "Detect changes" via git-flags)
-# need real history, so let Buildkite's normal checkout handle them.
+# Only seed plain depth-1 checkouts. Steps asking for deeper history or tags
+# (release/deploy, monorepo-diff "Detect changes" via git-flags) need real
+# history -> Buildkite's normal checkout.
 case " ${CLONE_FLAGS} ${FETCH_FLAGS} " in
   *" --depth=1 "*) : ;;
-  *) normal_checkout; exit 0 ;;
+  *) echo "git-bundle: non-shallow step, using normal checkout"; normal_checkout; exit 0 ;;
 esac
 case " ${CLONE_FLAGS} ${FETCH_FLAGS} " in
-  *"--tags"*) normal_checkout; exit 0 ;;
+  *"--tags"*) echo "git-bundle: tags requested, using normal checkout"; normal_checkout; exit 0 ;;
 esac
 
-if ! gcloud storage cp "${GCS_URI}" "${BUNDLE}" 2>/tmp/gb_err; then
-  note "bundle download failed, normal checkout: $(head -c 200 /tmp/gb_err)"
+t0=${SECONDS}
+if ! gcloud storage cp "${CACHE_URI}" "${TAR}" 2>/tmp/gb_err; then
+  echo "git-bundle: cache unavailable ($(tail -c 150 /tmp/gb_err)); normal checkout"
   normal_checkout
   exit 0
 fi
+echo "git-bundle: downloaded git cache from GCS in $((SECONDS-t0))s ($(du -h "${TAR}" | cut -f1))"
 
 seed_ok=false
-if git clone --no-checkout "${BUNDLE}" . 2>/tmp/gb_err; then
-  git remote set-url origin "${REPO}"
+if tar -xf "${TAR}" -C "${CO}" 2>/tmp/gb_err && [ -d "${CO}/.git" ]; then
+  git remote set-url origin "${REPO}" 2>>/tmp/gb_err || true
   # shellcheck disable=SC2086
   if git fetch ${FETCH_FLAGS} -- origin "${COMMIT}" 2>>/tmp/gb_err \
      && git checkout -f "${COMMIT}" 2>>/tmp/gb_err; then
@@ -59,12 +58,13 @@ if git clone --no-checkout "${BUNDLE}" . 2>/tmp/gb_err; then
     seed_ok=true
   fi
 fi
-rm -f "${BUNDLE}"
+rm -f "${TAR}"
 
 if [ "${seed_ok}" = true ]; then
-  note "seeded from bundle OK (.git=$(du -sh .git 2>/dev/null | cut -f1))"
+  echo "git-bundle: SEEDED checkout from GCS cache in $((SECONDS-t0))s total — only the commit delta was fetched from GitHub (.git=$(du -sh .git 2>/dev/null | cut -f1))"
+  buildkite-agent annotate --context git-bundle --style success "seeded from GCS cache ($((SECONDS-t0))s)" 2>/dev/null || true
 else
-  note "seed failed, normal checkout: $(tail -c 300 /tmp/gb_err)"
+  echo "git-bundle: seed failed ($(tail -c 200 /tmp/gb_err)); falling back to normal checkout"
   cd /
   rm -rf "${CO:?}"
   mkdir -p "${CO}"
