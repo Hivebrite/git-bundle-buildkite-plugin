@@ -1,0 +1,45 @@
+#!/bin/bash
+set -euo pipefail
+
+GCS_URI="${BUILDKITE_PLUGIN_GIT_BUNDLE_GCS_URI}"
+BUNDLE="/tmp/buildkite-git-bundle.bundle"
+CO="${BUILDKITE_BUILD_CHECKOUT_PATH}"
+REPO="${BUILDKITE_REPO}"
+COMMIT="${BUILDKITE_COMMIT}"
+CLONE_FLAGS="${BUILDKITE_GIT_CLONE_FLAGS:--v}"
+FETCH_FLAGS="${BUILDKITE_GIT_FETCH_FLAGS:--v}"
+REFSPEC="${BUILDKITE_REFSPEC:-}"
+
+normal_checkout() {
+  mkdir -p "${CO}"
+  cd "${CO}"
+  if [ ! -d .git ]; then
+    # shellcheck disable=SC2086
+    git clone ${CLONE_FLAGS} -- "${REPO}" .
+  fi
+  git remote set-url origin "${REPO}"
+  # shellcheck disable=SC2086
+  git fetch ${FETCH_FLAGS} -- origin "${COMMIT}"
+  git checkout -f "${COMMIT}"
+  git clean -ffxdq
+}
+
+if ! gcloud storage cp "${GCS_URI}" "${BUNDLE}" 2>/dev/null || ! git bundle verify "${BUNDLE}" >/dev/null 2>&1; then
+  echo "git-bundle: bundle unavailable/invalid, falling back to normal checkout"
+  rm -f "${BUNDLE}"
+  normal_checkout
+  exit 0
+fi
+
+echo "git-bundle: seeding checkout from GCS bundle"
+mkdir -p "${CO}"
+cd "${CO}"
+if [ ! -d .git ]; then
+  git clone --no-checkout "${BUNDLE}" .
+  git remote set-url origin "${REPO}"
+fi
+rm -f "${BUNDLE}"
+git fetch -v -- origin "${COMMIT}"
+git checkout -f "${COMMIT}"
+git clean -ffxdq
+echo "git-bundle: checkout complete from bundle (delta fetched from origin)"
