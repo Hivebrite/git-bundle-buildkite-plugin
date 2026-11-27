@@ -2,6 +2,9 @@
 set -euo pipefail
 
 CACHE_URI="${BUILDKITE_PLUGIN_GIT_BUNDLE_GCS_URI}"
+# gcloud can crash mid-download and leave its worker processes hanging, so the step
+# never reaches the fallback and sits until the job timeout. Cap the download.
+DOWNLOAD_TIMEOUT="${BUILDKITE_PLUGIN_GIT_BUNDLE_DOWNLOAD_TIMEOUT:-180}"
 TAR="/tmp/buildkite-git-cache.tar"
 CO="${BUILDKITE_BUILD_CHECKOUT_PATH}"
 REPO="${BUILDKITE_REPO}"
@@ -40,7 +43,8 @@ case " ${CLONE_FLAGS} ${FETCH_FLAGS} " in
   *"--tags"*) echo "git-bundle: tags requested, using normal checkout"; normal_checkout; exit 0 ;;
 esac
 
-if ! gcloud storage cp "${CACHE_URI}" "${TAR}" 2>/tmp/gb_err; then
+if ! timeout -s KILL "${DOWNLOAD_TIMEOUT}" gcloud storage cp "${CACHE_URI}" "${TAR}" 2>/tmp/gb_err; then
+  rm -f "${TAR}" "${TAR}"_.gstmp
   echo "git-bundle: cache unavailable ($(tail -c 150 /tmp/gb_err)); normal checkout"
   normal_checkout
   exit 0
