@@ -5,9 +5,14 @@ requirements:
   - gcloud
   - git
   - tar
+  - timeout
 configuration:
   properties:
     gcs_uri:
       type: string
+    download_timeout:
+      type: integer
+    git_timeout:
+      type: integer
   required:
     - gcs_uri
