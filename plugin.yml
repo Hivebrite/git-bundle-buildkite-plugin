@@ -3,11 +3,15 @@ description: Seeds the Buildkite checkout from a GCS-hosted git cache tarball (f
 author: Hivebrite
 requirements:
   - gcloud
+  - timeout
   - git
   - tar
 configuration:
   properties:
     gcs_uri:
       type: string
+    download_timeout:
+      type: integer
+      description: Seconds before the cache download is abandoned for a normal checkout (default 180)
   required:
     - gcs_uri
